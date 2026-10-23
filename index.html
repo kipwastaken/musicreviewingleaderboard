@@ -7,45 +7,127 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         body { font-family: sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; }
+        nav { margin-bottom: 20px; padding-bottom: 10px; border-bottom: 1px solid #ddd; display: flex; justify-content: space-between; align-items: center; }
+        nav a { margin-right: 15text; text-decoration: none; color: #0066cc; font-weight: bold; cursor: pointer; }
+        nav a:hover { text-decoration: underline; }
         table { width: 100%; border-collapse: collapse; margin-top: 20px; }
         th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
         th { background-color: #f4f4f4; }
+        .hidden { display: none !important; }
+        .card { border: 1px solid #ddd; padding: 20px; border-radius: 5px; margin-top: 20px; background: #fafafa; }
+        input { display: block; margin-bottom: 10px; padding: 8px; width: 100%; max-width: 300px; box-sizing: border-box; }
+        button { padding: 8px 15px; background: #0066cc; color: white; border: none; cursor: pointer; }
+        button:hover { background: #004999; }
     </style>
 </head>
 <body>
 
-    <h1>Leaderboard / Classement Général</h1>
-    <div id="status">Chargement des albums...</div>
+    <!-- NAVIGATION -->
+    <nav>
+        <div>
+            <a onclick="switchTab('leaderboard')">Leaderboard</a>
+            <a onclick="switchTab('profile')" id="nav-profile">Mon Profil</a>
+        </div>
+        <div id="auth-status-container">
+            <span id="user-display" style="margin-right: 15px; font-size: 14px; color: #666;"></span>
+            <button id="auth-btn" onclick="handleAuthBtn()">Connexion</button>
+        </div>
+    </nav>
 
-    <table id="rankings-table" style="display: none;">
-        <thead>
-            <tr>
-                <th>Position</th>
-                <th>Artiste</th>
-                <th>Album</th>
-                <th>Année</th>
-                <th>Moyenne</th>
-            </tr>
-        </thead>
-        <tbody id="rankings-body">
-            <!-- Les albums s'afficheront ici automatiquement -->
-        </tbody>
-    </table>
+    <!-- VUE 1 : LEADERBOARD -->
+    <div id="view-leaderboard">
+        <h1>Leaderboard / Classement Général</h1>
+        <div id="status">Chargement des albums...</div>
+
+        <table id="rankings-table" class="hidden">
+            <thead>
+                <tr>
+                    <th>Position</th>
+                    <th>Artiste</th>
+                    <th>Album</th>
+                    <th>Année</th>
+                    <th>Moyenne</th>
+                </tr>
+            </thead>
+            <tbody id="rankings-body">
+                <!-- Les albums s'afficheront ici automatiquement -->
+            </tbody>
+        </table>
+    </div>
+
+    <!-- VUE 2 : PROFIL / CONNEXION -->
+    <div id="view-profile" class="hidden">
+        <h1 id="profile-title">Mon Profil</h1>
+        <div id="profile-content">
+            <!-- Injecté dynamiquement selon l'état de connexion -->
+        </div>
+    </div>
 
     <script>
-        // 1. CONFIGURATION (Remplacez par vos identifiants Supabase)
-        const SUPABASE_URL = 'https://asghqjsdmpetblsnncko.supabase.co/';
+        // 1. CONFIGURATION SUPABASE
+        const SUPABASE_URL = 'https://asghqjsdmpetblsnncko.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFzZ2hxanNkbXBldGJsc25uY2tvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI3NzcwMzgsImV4cCI6MjEwODM1MzAzOH0.-K2hWr6qmo4GRwusY3O9J8yFqcH7WHZcQnGvId1Vj8o';
 
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        let currentUser = null;
 
-        // 2. CHARGEMENT DES DONNÉES DE LA VUE SUPABASE
+        // Initialisation au chargement de la page
+        window.addEventListener('DOMContentLoaded', async () => {
+            const { data: { session } } = await supabaseClient.auth.getSession();
+            currentUser = session?.user || null;
+            updateAuthUI();
+            loadLeaderboard();
+        });
+
+        // Gestion de la navigation par onglets
+        function switchTab(tabName) {
+            document.getElementById('view-leaderboard').classList.add('hidden');
+            document.getElementById('view-profile').classList.add('hidden');
+
+            if (tabName === 'leaderboard') {
+                document.getElementById('view-leaderboard').classList.remove('hidden');
+                loadLeaderboard();
+            } else if (tabName === 'profile') {
+                document.getElementById('view-profile').classList.remove('hidden');
+                renderProfileView();
+            }
+        }
+
+        function updateAuthUI() {
+            const userDisplay = document.getElementById('user-display');
+            const authBtn = document.getElementById('auth-btn');
+
+            if (currentUser) {
+                const pseudo = currentUser.email.split('@')[0];
+                userDisplay.innerText = `@${pseudo}`;
+                authBtn.innerText = 'Déconnexion';
+            } else {
+                userDisplay.innerText = '';
+                authBtn.innerText = 'Connexion';
+            }
+        }
+
+        function handleAuthBtn() {
+            if (currentUser) {
+                logout();
+            } else {
+                switchTab('profile'); // Affiche le formulaire de connexion
+            }
+        }
+
+        async function logout() {
+            await supabaseClient.auth.signOut();
+            currentUser = null;
+            updateAuthUI();
+            switchTab('leaderboard');
+        }
+
+        // 2. CHARGEMENT DU LEADERBOARD (Correction de l'année)
         async function loadLeaderboard() {
             const statusEl = document.getElementById('status');
             const tableEl = document.getElementById('rankings-table');
             const tbodyEl = document.getElementById('rankings-body');
 
-            // On interroge la vue 'album_rankings' créée dans le premier script SQL
             const { data: albums, error } = await supabaseClient
                 .from('album_rankings')
                 .select('*')
@@ -62,25 +144,109 @@
             }
 
             statusEl.style.display = 'none';
-            tableEl.style.display = 'table';
+            tableEl.classList.remove('hidden');
             tbodyEl.innerHTML = '';
 
-            // Affichage de chaque album dans le tableau
             albums.forEach((album, index) => {
                 const row = document.createElement('tr');
+                // Note : release_year ou year selon la définition de la vue SQL
+                const year = album.release_year || album.year || '----';
                 row.innerHTML = `
                     <td>#${index + 1}</td>
                     <td>${album.artist_name || 'Inconnu'}</td>
                     <td><b>${album.title}</b></td>
-                    <td>${album.release_year || '----'}</td>
+                    <td>${year}</td>
                     <td>${Number(album.average_score).toFixed(1)} / 100 (${album.total_ratings} votes)</td>
                 `;
                 tbodyEl.appendChild(row);
             });
         }
 
-        // Lancement au chargement de la page
-        loadLeaderboard();
+        // 3. VUE PROFIL & AUTHENTIFICATION SIMPLE
+        async function renderProfileView() {
+            const container = document.getElementById('profile-content');
+            const title = document.getElementById('profile-title');
+
+            if (!currentUser) {
+                title.innerText = 'Connexion ou Inscription';
+                container.innerHTML = `
+                    <div class="card">
+                        <h3>Accéder à votre compte</h3>
+                        <p style="font-size: 13px; color: #666;">Entrez un pseudo et un mot de passe simple (sans confirmation mail).</p>
+                        <input type="text" id="auth-username" placeholder="Pseudo (ex: john_doe)">
+                        <input type="password" id="auth-password" placeholder="Mot de passe">
+                        <div style="display: flex; gap: 10px; margin-top: 15px;">
+                            <button onclick="handleLogin()">Connexion</button>
+                            <button onclick="handleSignup()" style="background: #444;">Inscription</button>
+                        </div>
+                    </div>
+                `;
+            } else {
+                const pseudo = currentUser.email.split('@')[0];
+                title.innerText = `Profil de @${pseudo}`;
+                
+                // Récupération des notes de l'utilisateur
+                const { data: myRatings, error } = await supabaseClient
+                    .from('ratings')
+                    .select('*, albums(title, release_year, artists(name))')
+                    .eq('user_id', currentUser.id);
+
+                let ratingsHtml = '';
+                if (!myRatings || myRatings.length === 0) {
+                    ratingsHtml = '<p>Vous n\'avez pas encore noté d\'albums.</p>';
+                } else {
+                    ratingsHtml = '<ul>';
+                    myRatings.forEach(r => {
+                        const album = r.albums;
+                        const artistName = album && album.artists ? album.artists.name : 'Artiste inconnu';
+                        const albumTitle = album ? album.title : 'Album inconnu';
+                        ratingsHtml += `<li><b>${artistName}</b> - ${albumTitle} : <b>${r.score} / 100</b></li>`;
+                    });
+                    ratingsHtml += '</ul>';
+                }
+
+                container.innerHTML = `
+                    <div class="card">
+                        <p><b>Identifiant technique :</b> ${currentUser.email}</p>
+                        <button onclick="logout()" style="background: #cc0000; margin-top: 10px;">Se déconnecter</button>
+                    </div>
+                    <div class="card">
+                        <h3>Vos notes enregistrées</h3>
+                        ${ratingsHtml}
+                    </div>
+                `;
+            }
+        }
+
+        async function handleSignup() {
+            const username = document.getElementById('auth-username').value.trim().toLowerCase();
+            const password = document.getElementById('auth-password').value;
+            if (!username || !password) { alert('Remplissez tous les champs.'); return; }
+
+            const fakeEmail = `${username}@votre-site.local`;
+            const { data, error } = await supabaseClient.auth.signUp({ email: fakeEmail, password: password });
+            if (error) { alert('Erreur : ' + error.message); return; }
+
+            alert('Compte créé et connecté !');
+            currentUser = data.user;
+            updateAuthUI();
+            switchTab('leaderboard');
+        }
+
+        async function handleLogin() {
+            const username = document.getElementById('auth-username').value.trim().toLowerCase();
+            const password = document.getElementById('auth-password').value;
+            if (!username || !password) { alert('Remplissez tous les champs.'); return; }
+
+            const fakeEmail = `${username}@votre-site.local`;
+            const { data, error } = await supabaseClient.auth.signInWithPassword({ email: fakeEmail, password: password });
+            if (error) { alert('Erreur de connexion : ' + error.message); return; }
+
+            alert('Connexion réussie !');
+            currentUser = data.user;
+            updateAuthUI();
+            switchTab('leaderboard');
+        }
     </script>
 
 </body>
