@@ -1,521 +1,87 @@
-
 <!DOCTYPE html>
-<html lang="fr" class="dark">
+<html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>equidistant — Music Ranking & Archive</title>
-    <!-- Tailwind CSS CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: {
-                    colors: {
-                        darkbg: '#121212',
-                        cardbg: '#181818',
-                        bordercolor: '#2a2a2a',
-                        accent: '#e056fd',
-                        warmorange: '#e26d5c',
-                    },
-                    fontFamily: {
-                        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
-                        mono: ['Fira Code', 'Courier New', 'monospace']
-                    }
-                }
-            }
-        }
-    </script>
-    <!-- Supabase JS Client -->
+    <title>Mon Classement d'Albums</title>
+    <!-- Import de la bibliothèque Supabase -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
-        body { background-color: #121212; color: #e5e7eb; }
-        .custom-border { border-color: #2a2a2a; }
+        body { font-family: sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+        th { background-color: #f4f4f4; }
     </style>
 </head>
-<body class="min-h-screen flex flex-col justify-between font-sans selection:bg-warmorange selection:text-white">
+<body>
 
-    <!-- TOP HEADER & NAV -->
-    <header class="border-b custom-border px-6 py-4">
-        <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
-            <div class="flex items-center gap-6 w-full md:w-auto justify-between">
-                <a href="#" onclick="navigate('ranking')" class="text-xl font-bold tracking-wider text-white uppercase">equidistant</a>
-                <div id="auth-header-status" class="text-xs font-mono text-gray-400">
-                    <!-- Dynamic Auth status -->
-                </div>
-            </div>
-            
-            <nav class="flex items-center gap-6 text-xs font-mono uppercase tracking-widest text-gray-400">
-                <a href="#" onclick="navigate('ranking')" class="hover:text-warmorange transition">Main</a>
-                <a href="#" onclick="navigate('ranking')" class="hover:text-warmorange transition text-warmorange font-semibold">Archive</a>
-                <a href="#" onclick="checkProfileAccess()" class="hover:text-warmorange transition">Profile</a>
-                <div id="auth-btn-container">
-                    <button onclick="navigate('login')" class="border custom-border px-3 py-1 rounded text-white hover:border-warmorange transition">Login</button>
-                </div>
-            </nav>
-        </div>
-    </header>
+    <h1>Leaderboard / Classement Général</h1>
+    <div id="status">Chargement des albums...</div>
 
-    <!-- SUB-NAV / CATEGORIES -->
-    <div class="border-b custom-border bg-darkbg/50 backdrop-blur">
-        <div class="max-w-7xl mx-auto px-6 py-3 flex gap-8 text-xs font-mono uppercase tracking-widest overflow-x-auto">
-            <span class="text-warmorange font-bold cursor-pointer">01 / Music</span>
-            <span class="text-gray-600 cursor-not-allowed">02 / Films</span>
-            <span class="text-gray-600 cursor-not-allowed">03 / High Energy Physics</span>
-            <span class="text-gray-600 cursor-not-allowed">04 / Logic & Computing</span>
-        </div>
-    </div>
+    <table id="rankings-table" style="display: none;">
+        <thead>
+            <tr>
+                <th>Position</th>
+                <th>Artiste</th>
+                <th>Album</th>
+                <th>Année</th>
+                <th>Moyenne</th>
+            </tr>
+        </thead>
+        <tbody id="rankings-body">
+            <!-- Les albums s'afficheront ici automatiquement -->
+        </tbody>
+    </table>
 
-    <!-- MAIN CONTENT CONTAINER -->
-    <main class="flex-grow max-w-7xl w-full mx-auto px-6 py-8">
-        <div id="app-view">
-            <!-- Dynamically injected views -->
-        </div>
-    </main>
-
-    <!-- FOOTER -->
-    <footer class="border-t custom-border px-6 py-4 text-xs font-mono text-gray-500 flex justify-between items-center max-w-7xl mx-auto w-full">
-        <div>equidistant archive / secure notes v1.0</div>
-        <div id="local-time">LOCAL TIME / --:--:--</div>
-    </footer>
-
-    <!-- JAVASCRIPT APPLICATION LOGIC -->
     <script>
-        // ================= CONFIGURATION SUPABASE =================
-        // Remplacez ces valeurs par vos identifiants Supabase
-        const SUPABASE_URL = 'ttps://asghqjsdmpetblsnncko.supabase.co/rest/v1/';
-        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFzZ2hxanNkbXBldGJsc25uY2tvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI3NzcwMzgsImV4cCI6MjEwODM1MzAzOH0.-K2hWr6qmo4GRwusY3O9J8yFqcH7WHZcQnGvId1Vj8o';
-        
-        let supabaseClient = null;
-        if (SUPABASE_URL !== 'VOTRE_SUPABASE_URL') {
-            supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        }
+        // 1. CONFIGURATION (Remplacez par vos identifiants Supabase)
+        const SUPABASE_URL = 'VOTRE_SUPABASE_URL';
+        const SUPABASE_ANON_KEY = 'VOTRE_SUPABASE_ANON_KEY';
 
-        // État de l'application
-        let currentUser = null;
-        let currentView = 'ranking'; // 'ranking', 'artist', 'album', 'profile', 'login'
-        let currentParam = null; // ID de l'artiste ou de l'album sélectionné
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-        // Initialisation
-        window.addEventListener('DOMContentLoaded', async () => {
-            updateClock();
-            setInterval(updateClock, 1000);
+        // 2. CHARGEMENT DES DONNÉES DE LA VUE SUPABASE
+        async function loadLeaderboard() {
+            const statusEl = document.getElementById('status');
+            const tableEl = document.getElementById('rankings-table');
+            const tbodyEl = document.getElementById('rankings-body');
 
-            if (supabaseClient) {
-                const { data: { session } } = await supabaseClient.auth.getSession();
-                currentUser = session?.user || null;
-                updateAuthUI();
-            }
-
-            navigate('ranking');
-        });
-
-        function updateClock() {
-            const now = new Date();
-            document.getElementById('local-time').innerText = `LOCAL TIME / ${now.toTimeString().split(' ')[0]}`;
-        }
-
-        function updateAuthUI() {
-            const statusEl = document.getElementById('auth-header-status');
-            const btnContainer = document.getElementById('auth-btn-container');
-            
-            if (currentUser) {
-                const pseudo = currentUser.email.split('@')[0];
-                statusEl.innerText = `Logged as: @${pseudo}`;
-                btnContainer.innerHTML = `<button onclick="logout()" class="border custom-border px-3 py-1 rounded text-red-400 hover:border-red-400 transition">Logout</button>`;
-            } else {
-                statusEl.innerText = 'Not logged in';
-                btnContainer.innerHTML = `<button onclick="navigate('login')" class="border custom-border px-3 py-1 rounded text-white hover:border-warmorange transition">Login</button>`;
-            }
-        }
-
-        async function logout() {
-            if (supabaseClient) {
-                await supabaseClient.auth.signOut();
-                currentUser = null;
-                updateAuthUI();
-                navigate('ranking');
-            }
-        }
-
-        function checkProfileAccess() {
-            if (!currentUser) {
-                alert('Veuillez vous connecter pour accéder à votre profil.');
-                navigate('login');
-            } else {
-                navigate('profile');
-            }
-        }
-
-        // ================= ROUTAGE ET VUES =================
-        async function navigate(view, param = null) {
-            currentView = view;
-            currentParam = param;
-            const container = document.getElementById('app-view');
-            container.innerHTML = '<div class="text-center py-20 font-mono text-gray-500 animate-pulse">Loading archive...</div>';
-
-            if (!supabaseClient) {
-                container.innerHTML = renderConfigError();
-                return;
-            }
-
-            try {
-                switch(view) {
-                    case 'ranking':
-                        container.innerHTML = await renderRankingView();
-                        break;
-                    case 'artist':
-                        container.innerHTML = await renderArtistView(param);
-                        break;
-                    case 'album':
-                        container.innerHTML = await renderAlbumView(param);
-                        break;
-                    case 'profile':
-                        if (!currentUser) { navigate('login'); return; }
-                        container.innerHTML = await renderProfileView();
-                        break;
-                    case 'login':
-                        container.innerHTML = renderLoginView();
-                        break;
-                }
-            } catch (err) {
-                console.error(err);
-                container.innerHTML = `<div class="text-red-400 font-mono p-6 border custom-border bg-cardbg">Erreur de chargement: ${err.message}</div>`;
-            }
-        }
-
-        // ================= VUE 1 : CLASSEMENT GÉNÉRAL =================
-        async function renderRankingView() {
+            // On interroge la vue 'album_rankings' créée dans le premier script SQL
             const { data: albums, error } = await supabaseClient
                 .from('album_rankings')
                 .select('*')
                 .order('average_score', { ascending: false });
 
-            if (error) throw error;
-
-            let html = `
-                <div class="mb-10">
-                    <h1 class="text-5xl font-light tracking-tight text-white mb-2 font-sans">Archive</h1>
-                    <p class="text-xs font-mono text-gray-400 uppercase tracking-widest">Global Music Rankings & Community Ratings</p>
-                </div>
-
-                <div class="mb-6 flex flex-col md:flex-row gap-4 justify-between items-center">
-                    <input type="text" id="search-input" placeholder="Search music..." onkeyup="filterAlbums()" 
-                        class="w-full md:w-96 bg-cardbg border custom-border px-4 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-warmorange font-mono">
-                    <div class="text-xs font-mono text-gray-400">
-                        Total items: <span class="text-white">${albums ? albums.length : 0}</span>
-                    </div>
-                </div>
-
-                <div class="border custom-border bg-cardbg overflow-hidden">
-                    <div class="grid grid-cols-12 px-6 py-3 border-b custom-border text-xs font-mono text-gray-500 uppercase tracking-widest">
-                        <div class="col-span-1">No.</div>
-                        <div class="col-span-7">Artist / Title</div>
-                        <div class="col-span-2 text-center">Year</div>
-                        <div class="col-span-2 text-right">Rating</div>
-                    </div>
-                    <div id="albums-list" class="divide-y divide-custom-border">
-            `;
+            if (error) {
+                statusEl.innerText = "Erreur lors du chargement : " + error.message;
+                return;
+            }
 
             if (!albums || albums.length === 0) {
-                html += `<div class="p-6 text-center text-xs font-mono text-gray-500">Aucun album dans l'archive pour le moment.</div>`;
-            } else {
-                albums.forEach((album, index) => {
-                    const no = String(index + 1).padStart(3, '0');
-                    const stars = renderStars(album.average_score);
-                    html += `
-                        <div class="grid grid-cols-12 px-6 py-4 items-center hover:bg-white/5 transition cursor-pointer" onclick="navigate('album', '${album.album_id}')">
-                            <div class="col-span-1 font-mono text-xs text-warmorange">${no}</div>
-                            <div class="col-span-7">
-                                <div class="text-sm font-medium text-white">${album.title}</div>
-                                <div class="text-xs text-gray-400 hover:underline" onclick="event.stopPropagation(); navigate('artist', '${album.artist_id}')">${album.artist_name || 'Artiste inconnu'}</div>
-                            </div>
-                            <div class="col-span-2 text-center font-mono text-xs text-gray-400">${album.release_year || '----'}</div>
-                            <div class="col-span-2 text-right font-mono text-xs text-warmorange flex justify-end items-center gap-2">
-                                <span>${Number(album.average_score).toFixed(1)}</span>
-                                <span class="text-xs">${stars}</span>
-                            </div>
-                        </div>
-                    `;
-                });
+                statusEl.innerText = "Aucun album trouvé dans la base de données. Ajoutez-en un via Supabase !";
+                return;
             }
 
-            html += `</div></div>`;
-            return html;
-        }
+            statusEl.style.display = 'none';
+            tableEl.style.display = 'table';
+            tbodyEl.innerHTML = '';
 
-        // ================= VUE 2 : PAGE ARTISTE =================
-        async function renderArtistView(artistId) {
-            const { data: artist, error: errArtist } = await supabaseClient
-                .from('artists')
-                .select('*')
-                .eq('id', artistId)
-                .single();
-
-            if (errArtist) throw errArtist;
-
-            const { data: albums, error: errAlbums } = await supabaseClient
-                .from('albums')
-                .select('*')
-                .eq('artist_id', artistId);
-
-            if (errAlbums) throw errAlbums;
-
-            let html = `
-                <button onclick="navigate('ranking')" class="text-xs font-mono text-warmorange mb-6 hover:underline">&larr; Back to archive</button>
-                <div class="mb-10">
-                    <h1 class="text-4xl font-light text-white mb-2">${artist.name}</h1>
-                    <p class="text-xs font-mono text-gray-400 uppercase tracking-widest">Discographie & Albums</p>
-                </div>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-            `;
-
-            albums.forEach(album => {
-                html += `
-                    <div onclick="navigate('album', '${album.id}')" class="border custom-border bg-cardbg p-5 cursor-pointer hover:border-warmorange transition group">
-                        <div class="h-48 bg-black/40 mb-4 border custom-border flex items-center justify-center overflow-hidden">
-                            ${album.cover_url ? `<img src="${album.cover_url}" class="w-full h-full object-cover group-hover:scale-105 transition">` : '<span class="text-xs font-mono text-gray-600">NO COVER</span>'}
-                        </div>
-                        <h3 class="text-white font-medium mb-1">${album.title}</h3>
-                        <div class="text-xs font-mono text-gray-400">${album.release_year || ''}</div>
-                    </div>
+            // Affichage de chaque album dans le tableau
+            albums.forEach((album, index) => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>#${index + 1}</td>
+                    <td>${album.artist_name || 'Inconnu'}</td>
+                    <td><b>${album.title}</b></td>
+                    <td>${album.release_year || '----'}</td>
+                    <td>${Number(album.average_score).toFixed(1)} / 100 (${album.total_ratings} votes)</td>
                 `;
+                tbodyEl.appendChild(row);
             });
-
-            html += `</div>`;
-            return html;
         }
 
-        // ================= VUE 3 : PAGE ALBUM & AVIS =================
-        async function renderAlbumView(albumId) {
-            const { data: album, error: errAlbum } = await supabaseClient
-                .from('album_rankings')
-                .select('*')
-                .eq('album_id', albumId)
-                .single();
-
-            if (errAlbum) throw errAlbum;
-
-            const { data: ratings, error: errRatings } = await supabaseClient
-                .from('ratings')
-                .select('*')
-                .eq('album_id', albumId);
-
-            if (errRatings) throw errRatings;
-
-            let userRating = 50;
-            if (currentUser && ratings) {
-                const existing = ratings.find(r => r.user_id === currentUser.id);
-                if (existing) userRating = existing.score;
-            }
-
-            let html = `
-                <button onclick="navigate('ranking')" class="text-xs font-mono text-warmorange mb-6 hover:underline">&larr; Back to archive</button>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-8 mb-12">
-                    <div class="border custom-border bg-cardbg h-72 flex items-center justify-center overflow-hidden">
-                        ${album.cover_url ? `<img src="${album.cover_url}" class="w-full h-full object-cover">` : '<span class="text-xs font-mono text-gray-600">NO COVER</span>'}
-                    </div>
-                    <div class="md:col-span-2 flex flex-col justify-center">
-                        <div class="text-xs font-mono text-warmorange uppercase tracking-widest mb-2">${album.artist_name}</div>
-                        <h1 class="text-4xl font-light text-white mb-4">${album.title}</h1>
-                        <div class="text-sm font-mono text-gray-400 mb-6">Sortie : ${album.release_year || 'N/C'}</div>
-                        <div class="flex items-center gap-4 border-t custom-border pt-4">
-                            <div>
-                                <div class="text-2xl font-mono text-white">${Number(album.average_score).toFixed(1)} / 100</div>
-                                <div class="text-xs font-mono text-gray-500 uppercase">Moyenne (${album.total_ratings} avis)</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- SECTION NOTATION / AVIS -->
-                <div class="border-t custom-border pt-8">
-                    <h2 class="text-xl font-light text-white mb-6">Noter cet album</h2>
-            `;
-
-            if (!currentUser) {
-                html += `<div class="bg-cardbg border custom-border p-4 text-xs font-mono text-gray-400">Veuillez vous <a href="#" onclick="navigate('login')" class="text-warmorange underline">connecter</a> pour attribuer une note unique à cet album.</div>`;
-            } else {
-                html += `
-                    <div class="bg-cardbg border custom-border p-6 max-w-xl">
-                        <div class="mb-4">
-                            <label class="block text-xs font-mono text-gray-400 uppercase mb-2">Votre note (0 à 100) : <span id="score-val" class="text-white font-bold">${userRating}</span></label>
-                            <input type="range" id="rating-slider" min="0" max="100" value="${userRating}" oninput="document.getElementById('score-val').innerText = this.value" class="w-full accent-warmorange bg-darkbg">
-                        </div>
-                        <button onclick="submitRating('${albumId}')" class="border custom-border bg-warmorange text-white font-mono text-xs uppercase px-4 py-2 hover:bg-opacity-80 transition">Enregistrer ma note</button>
-                    </div>
-                `;
-            }
-
-            html += `
-                <h3 class="text-lg font-light text-white mt-12 mb-4">Derniers avis de la communauté</h3>
-                <div class="space-y-3">
-            `;
-
-            if (!ratings || ratings.length === 0) {
-                html += `<div class="text-xs font-mono text-gray-500">Aucun avis pour l'instant. Soyez le premier !</div>`;
-            } else {
-                ratings.forEach(r => {
-                    html += `
-                        <div class="border custom-border bg-cardbg p-4 flex justify-between items-center font-mono text-xs">
-                            <div class="text-gray-400">Utilisateur ID: <span class="text-white">${r.user_id.substring(0, 8)}...</span></div>
-                            <div class="text-warmorange font-bold text-sm">Note : ${r.score} / 100</div>
-                        </div>
-                    `;
-                });
-            }
-
-            html += `</div></div>`;
-            return html;
-        }
-
-        async function submitRating(albumId) {
-            const score = parseInt(document.getElementById('rating-slider').value);
-            const { error } = await supabaseClient
-                .from('ratings')
-                .upsert({ user_id: currentUser.id, album_id: albumId, score: score }, { onConflict: 'user_id, album_id' });
-
-            if (error) {
-                alert('Erreur lors de l'enregistrement : ' + error.message);
-            } else {
-                alert('Note enregistrée avec succès !');
-                navigate('album', albumId);
-            }
-        }
-
-        // ================= VUE 4 : PROFIL UTILISATEUR =================
-        async function renderProfileView() {
-            const pseudo = currentUser.email.split('@')[0];
-            const { data: myRatings, error } = await supabaseClient
-                .from('ratings')
-                .select('*, albums(title, cover_url, release_year, artists(name))')
-                .eq('user_id', currentUser.id);
-
-            if (error) throw error;
-
-            let html = `
-                <div class="mb-10">
-                    <h1 class="text-4xl font-light text-white mb-2">Profil de @${pseudo}</h1>
-                    <p class="text-xs font-mono text-gray-400 uppercase tracking-widest">Vos notes et classements personnels</p>
-                </div>
-                <div class="border custom-border bg-cardbg p-6 mb-8 font-mono text-xs">
-                    <div class="text-gray-400 mb-1">Email / Identifiant technique : <span class="text-white">${currentUser.email}</span></div>
-                    <div class="text-gray-400">Total d'albums notés : <span class="text-white">${myRatings ? myRatings.length : 0}</span></div>
-                </div>
-                <h3 class="text-lg font-light text-white mb-4">Historique de vos notes</h3>
-                <div class="space-y-3">
-            `;
-
-            if (!myRatings || myRatings.length === 0) {
-                html += `<div class="text-xs font-mono text-gray-500">Vous n'avez encore noté aucun album.</div>`;
-            } else {
-                myRatings.forEach(r => {
-                    const album = r.albums;
-                    html += `
-                        <div class="border custom-border bg-cardbg p-4 flex justify-between items-center cursor-pointer hover:border-warmorange transition" onclick="navigate('album', '${r.album_id}')">
-                            <div>
-                                <div class="text-sm font-medium text-white">${album ? album.title : 'Album inconnu'}</div>
-                                <div class="text-xs font-mono text-gray-400">${album && album.artists ? album.artists.name : ''}</div>
-                            </div>
-                            <div class="font-mono text-warmorange text-sm font-bold">
-                                ${r.score} / 100
-                            </div>
-                        </div>
-                    `;
-                });
-            }
-
-            html += `</div>`;
-            return html;
-        }
-
-        // ================= VUE 5 : CONNEXION / INSCRIPTION =================
-        function renderLoginView() {
-            return `
-                <div class="max-w-md mx-auto border custom-border bg-cardbg p-8 mt-12">
-                    <h1 class="text-2xl font-light text-white mb-2">Accès & Inscription</h1>
-                    <p class="text-xs font-mono text-gray-400 uppercase tracking-widest mb-6">Entrez un pseudo et un mot de passe simple</p>
-                    
-                    <div class="space-y-4 font-mono text-xs">
-                        <div>
-                            <label class="block text-gray-400 uppercase mb-2">Nom d'utilisateur (Pseudo)</label>
-                            <input type="text" id="auth-username" placeholder="ex: user123" class="w-full bg-darkbg border custom-border px-4 py-2 text-white focus:outline-none focus:border-warmorange">
-                        </div>
-                        <div>
-                            <label class="block text-gray-400 uppercase mb-2">Mot de passe</label>
-                            <input type="password" id="auth-password" placeholder="••••••••" class="w-full bg-darkbg border custom-border px-4 py-2 text-white focus:outline-none focus:border-warmorange">
-                        </div>
-                        <div class="flex gap-4 pt-4">
-                            <button onclick="handleLogin()" class="flex-1 border custom-border bg-warmorange text-white py-2 uppercase hover:bg-opacity-80 transition">Connexion</button>
-                            <button onclick="handleSignup()" class="flex-1 border custom-border text-white py-2 uppercase hover:border-warmorange transition">Inscription</button>
-                        </div>
-                    </div>
-                </div>
-            `;
-        }
-
-        async function handleSignup() {
-            const username = document.getElementById('auth-username').value.trim();
-            const password = document.getElementById('auth-password').value;
-            if (!username || !password) { alert('Veuillez remplir tous les champs'); return; }
-
-            const fakeEmail = `${username.toLowerCase()}@equidistant.local`;
-            const { data, error } = await supabaseClient.auth.signUp({ email: fakeEmail, password: password });
-            if (error) alert('Erreur : ' + error.message);
-            else {
-                alert('Compte créé et connecté !');
-                currentUser = data.user;
-                updateAuthUI();
-                navigate('ranking');
-            }
-        }
-
-        async function handleLogin() {
-            const username = document.getElementById('auth-username').value.trim();
-            const password = document.getElementById('auth-password').value;
-            if (!username || !password) { alert('Veuillez remplir tous les champs'); return; }
-
-            const fakeEmail = `${username.toLowerCase()}@equidistant.local`;
-            const { data, error } = await supabaseClient.auth.signInWithPassword({ email: fakeEmail, password: password });
-            if (error) alert('Erreur de connexion : ' + error.message);
-            else {
-                alert('Connexion réussie !');
-                currentUser = data.user;
-                updateAuthUI();
-                navigate('ranking');
-            }
-        }
-
-        // ================= UTILITAIRES =================
-        function renderStars(score) {
-            const starsCount = Math.round((score / 100) * 5);
-            let s = '';
-            for(let i=0; i<5; i++) {
-                s += i < starsCount ? '★' : '☆';
-            }
-            return s;
-        }
-
-        function filterAlbums() {
-            const query = document.getElementById('search-input').value.toLowerCase();
-            const list = document.getElementById('albums-list');
-            if (!list) return;
-            const items = list.children;
-            for (let item of items) {
-                const text = item.innerText.toLowerCase();
-                item.style.display = text.includes(query) ? 'grid' : 'none';
-            }
-        }
-
-        function renderConfigError() {
-            return `
-                <div class="max-w-xl mx-auto border custom-border bg-cardbg p-8 text-center font-mono">
-                    <h2 class="text-xl text-warmorange mb-4">Configuration Supabase requise</h2>
-                    <p class="text-xs text-gray-400 mb-6">Ouvrez le fichier <code class="text-white">index.html</code> et remplacez <code class="text-yellow-400">VOTRE_SUPABASE_URL</code> et <code class="text-yellow-400">VOTRE_SUPABASE_ANON_KEY</code> par vos clés d'API Supabase.</p>
-                </div>
-            `;
-        }
+        // Lancement au chargement de la page
+        loadLeaderboard();
     </script>
+
 </body>
 </html>
