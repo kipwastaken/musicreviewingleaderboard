@@ -89,14 +89,8 @@
                 document.getElementById('view-leaderboard').classList.remove('hidden');
                 loadLeaderboard();
             } else if (tabName === 'profile') {
-                if (!currentUser) {
-                    // Si non connecté, on reste sur le leaderboard ou on affiche le formulaire de connexion direct
-                    document.getElementById('view-profile').classList.remove('hidden');
-                    renderProfileView();
-                } else {
-                    document.getElementById('view-profile').classList.remove('hidden');
-                    renderProfileView();
-                }
+                document.getElementById('view-profile').classList.remove('hidden');
+                renderProfileView();
             }
         }
 
@@ -125,16 +119,16 @@
             switchTab('leaderboard');
         }
 
-        // 2. CHARGEMENT DU LEADERBOARD
+        // 2. CHARGEMENT DU LEADERBOARD (Via une jointure pour récupérer l'année de la table albums)
         async function loadLeaderboard() {
             const statusEl = document.getElementById('status');
             const tableEl = document.getElementById('rankings-table');
             const tbodyEl = document.getElementById('rankings-body');
 
+            // On interroge directement la table 'albums' avec la relation 'artists' et les notes pour calculer ou récupérer l'année
             const { data: albums, error } = await supabaseClient
-                .from('album_rankings')
-                .select('*')
-                .order('average_score', { ascending: false });
+                .from('albums')
+                .select('id, title, release_year, artists(name)');
 
             if (error) {
                 statusEl.innerText = "Erreur lors du chargement : " + error.message;
@@ -146,18 +140,41 @@
                 return;
             }
 
+            // Récupération des notes pour calculer la moyenne pour chaque album
+            const { data: ratings } = await supabaseClient.from('ratings').select('*');
+
+            // Calcul des moyennes pour chaque album
+            const processedAlbums = albums.map(album => {
+                const albumRatings = ratings ? ratings.filter(r => r.album_id === album.id) : [];
+                const totalRatings = albumRatings.length;
+                const averageScore = totalRatings > 0 
+                    ? albumRatings.reduce((acc, r) => acc + r.score, 0) / totalRatings 
+                    : 0;
+
+                return {
+                    id: album.id,
+                    title: album.title,
+                    release_year: album.release_year || '----',
+                    artist_name: album.artists ? album.artists.name : 'Inconnu',
+                    average_score: averageScore,
+                    total_ratings: totalRatings
+                };
+            });
+
+            // Tri par note moyenne décroissante
+            processedAlbums.sort((a, b) => b.average_score - a.average_score);
+
             statusEl.style.display = 'none';
             tableEl.classList.remove('hidden');
             tbodyEl.innerHTML = '';
 
-            albums.forEach((album, index) => {
+            processedAlbums.forEach((album, index) => {
                 const row = document.createElement('tr');
-                const year = album.release_year || album.year || '----';
                 row.innerHTML = `
                     <td>#${index + 1}</td>
-                    <td>${album.artist_name || 'Inconnu'}</td>
+                    <td>${album.artist_name}</td>
                     <td><b>${album.title}</b></td>
-                    <td>${year}</td>
+                    <td>${album.release_year}</td>
                     <td>${Number(album.average_score).toFixed(1)} / 100 (${album.total_ratings} votes)</td>
                 `;
                 tbodyEl.appendChild(row);
@@ -202,7 +219,8 @@
                         const album = r.albums;
                         const artistName = album && album.artists ? album.artists.name : 'Artiste inconnu';
                         const albumTitle = album ? album.title : 'Album inconnu';
-                        ratingsHtml += `<li><b>${artistName}</b> - ${albumTitle} : <b>${r.score} / 100</b></li>`;
+                        const year = album ? (album.release_year || '----') : '----';
+                        ratingsHtml += `<li><b>${artistName}</b> - ${albumTitle} (${year}) : <b>${r.score} / 100</b></li>`;
                     });
                     ratingsHtml += '</ul>';
                 }
