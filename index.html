@@ -119,31 +119,39 @@
             switchTab('leaderboard');
         }
 
-        // 2. CHARGEMENT DU LEADERBOARD (Via une jointure pour récupérer l'année de la table albums)
+        // 2. CHARGEMENT DU LEADERBOARD (Sécurisé avec requêtes indépendantes)
         async function loadLeaderboard() {
             const statusEl = document.getElementById('status');
             const tableEl = document.getElementById('rankings-table');
             const tbodyEl = document.getElementById('rankings-body');
 
-            // On interroge directement la table 'albums' avec la relation 'artists' et les notes pour calculer ou récupérer l'année
-            const { data: albums, error } = await supabaseClient
-                .from('albums')
-                .select('id, title, release_year, artists(name)');
+            statusEl.innerText = "Chargement des albums...";
+            statusEl.style.display = 'block';
+            tableEl.classList.add('hidden');
 
-            if (error) {
-                statusEl.innerText = "Erreur lors du chargement : " + error.message;
+            // Étape A : Récupérer tous les albums
+            const { data: albums, error: errAlbums } = await supabaseClient.from('albums').select('*');
+            if (errAlbums) {
+                statusEl.innerText = "Erreur albums : " + errAlbums.message;
                 return;
             }
 
             if (!albums || albums.length === 0) {
-                statusEl.innerText = "Aucun album trouvé dans la base de données. Ajoutez-en un via Supabase !";
+                statusEl.innerText = "Aucun album trouvé dans la table 'albums'.";
                 return;
             }
 
-            // Récupération des notes pour calculer la moyenne pour chaque album
+            // Étape B : Récupérer tous les artistes
+            const { data: artists } = await supabaseClient.from('artists').select('*');
+            const artistsMap = {};
+            if (artists) {
+                artists.forEach(art => { artistsMap[art.id] = art.name; });
+            }
+
+            // Étape C : Récupérer toutes les notes (ratings)
             const { data: ratings } = await supabaseClient.from('ratings').select('*');
 
-            // Calcul des moyennes pour chaque album
+            // Étape D : Assemblage et calculs
             const processedAlbums = albums.map(album => {
                 const albumRatings = ratings ? ratings.filter(r => r.album_id === album.id) : [];
                 const totalRatings = albumRatings.length;
@@ -154,8 +162,8 @@
                 return {
                     id: album.id,
                     title: album.title,
-                    release_year: album.release_year || '----',
-                    artist_name: album.artists ? album.artists.name : 'Inconnu',
+                    release_year: album.release_year || album.year || '----',
+                    artist_name: artistsMap[album.artist_id] || 'Artiste inconnu',
                     average_score: averageScore,
                     total_ratings: totalRatings
                 };
@@ -204,11 +212,18 @@
                 const pseudo = currentUser.email.split('@')[0];
                 title.innerText = `Profil de @${pseudo}`;
                 
-                // Récupération des notes de l'utilisateur
-                const { data: myRatings, error } = await supabaseClient
+                const { data: myRatings } = await supabaseClient
                     .from('ratings')
-                    .select('*, albums(title, release_year, artists(name))')
+                    .select('*')
                     .eq('user_id', currentUser.id);
+
+                const { data: albums } = await supabaseClient.from('albums').select('*');
+                const { data: artists } = await supabaseClient.from('artists').select('*');
+                
+                const albumsMap = {};
+                if (albums) albums.forEach(a => albumsMap[a.id] = a);
+                const artistsMap = {};
+                if (artists) artists.forEach(art => artistsMap[art.id] = art.name);
 
                 let ratingsHtml = '';
                 if (!myRatings || myRatings.length === 0) {
@@ -216,10 +231,10 @@
                 } else {
                     ratingsHtml = '<ul>';
                     myRatings.forEach(r => {
-                        const album = r.albums;
-                        const artistName = album && album.artists ? album.artists.name : 'Artiste inconnu';
-                        const albumTitle = album ? album.title : 'Album inconnu';
-                        const year = album ? (album.release_year || '----') : '----';
+                        const album = albumsMap[r.album_id] || {};
+                        const artistName = artistsMap[album.artist_id] || 'Artiste inconnu';
+                        const albumTitle = album.title || 'Album inconnu';
+                        const year = album.release_year || album.year || '----';
                         ratingsHtml += `<li><b>${artistName}</b> - ${albumTitle} (${year}) : <b>${r.score} / 100</b></li>`;
                     });
                     ratingsHtml += '</ul>';
